@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Smart Home Panel</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+    body {
+        margin: 0;
+        background: #f4f6fa;
+        font-family: Arial, sans-serif;
+    }
+    .container {
+        max-width: 450px;
+        margin: 60px auto;
+        background: #fff;
+        padding: 25px;
+        border-radius: 14px;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+    }
+    h2 { text-align: center; color: #333; }
+    input, button, select {
+        width: 100%;
+        padding: 12px;
+        margin: 10px 0;
+        border-radius: 8px;
+        border: 1px solid #bbb;
+        font-size: 15px;
+    }
+    button {
+        cursor: pointer;
+        background: #007bff;
+        color: white;
+        font-weight: bold;
+        border: none;
+    }
+    button:hover { background: #005dc3; }
+
+    .section {
+        margin-top: 20px;
+        padding: 15px;
+        border-radius: 12px;
+        background: #f1f5ff;
+        border: 1px solid #dce6ff;
+    }
+
+    .status-box {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+        font-weight: bold;
+    }
+</style>
+</head>
+<body>
+
+<!-- LOGIN PAGE -->
+<div id="loginPage" class="container">
+    <h2>Smart Home Login</h2>
+
+    <input type="email" id="email" placeholder="adi18@gmail.com" />
+    <input type="password" id="password" placeholder="200518" />
+
+    <button onclick="login()">Login</button>
+    <p id="loginStatus" style="color:red; text-align:center;"></p>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboardPage" class="container" style="display:none;">
+    <h2>Smart Home Panel</h2>
+    <button onclick="logout()" style="background:#ff4d4d;">Logout</button>
+
+    <!-- Monitoring Section -->
+    <div class="section">
+        <h3>Real-Time Monitoring</h3>
+
+        <div class="status-box">
+            <span>LDR (Light):</span>
+            <span id="ldrVal">--</span>
+        </div>
+
+        <div class="status-box">
+            <span>PIR (Motion):</span>
+            <span id="pirVal">--</span>
+        </div>
+
+        <div class="status-box">
+            <span>Lamp State:</span>
+            <span id="lampStateVal">--</span>
+        </div>
+
+        <div class="status-box">
+            <span>Brightness:</span>
+            <span id="brightnessVal">--</span>
+        </div>
+
+        <div class="status-box">
+            <span>Mode:</span>
+            <span id="modeVal">--</span>
+        </div>
+    </div>
+
+    <!-- Control Section -->
+    <div class="section">
+        <h3>Control Panel</h3>
+
+        <label>Mode</label>
+        <select id="modeSelect" onchange="updateMode()">
+            <option value="AUTO">AUTO</option>
+            <option value="MANUAL">MANUAL</option>
+        </select>
+
+        <label>Lamp ON/OFF</label>
+        <button onclick="toggleLamp()">Toggle Lamp</button>
+
+        <label>Brightness</label>
+        <input type="range" id="brightnessSlider" min="0" max="255" oninput="updateBrightness()" />
+    </div>
+</div>
+
+<!-- FIREBASE SDK -->
+<script type="module">
+    // =====================================================
+    // 🔥 Initialize Firebase (ISI DENGAN DATA PUNYAMU)
+    // =====================================================
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js";
+    import { getDatabase, ref, update, onValue } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-database.js";
+    import { 
+        getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged 
+    } from "https://www.gstatic.com/firebasejs/10.11.1/firebase-auth.js";
+
+    const firebaseConfig = {
+  apiKey: "AIzaSyC5z0ql613mM2gRYZ9B3vMCQgzcNKNSG9E",
+  authDomain: "esp32-smart-home-panel.firebaseapp.com",
+  databaseURL: "https://esp32-smart-home-panel-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "esp32-smart-home-panel",
+  storageBucket: "esp32-smart-home-panel.firebasestorage.app",
+  messagingSenderId: "276689194666",
+  appId: "1:276689194666:web:0a0635c62a254a31bfcad3"
+};
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const auth = getAuth(app);
+
+    // =====================================================
+    // 🔐 LOGIN FUNCTION
+    // =====================================================
+    window.login = function() {
+        const email = document.getElementById("email").value;
+        const pw = document.getElementById("password").value;
+
+        signInWithEmailAndPassword(auth, email, pw)
+            .then(() => {
+                document.getElementById("loginStatus").innerText = "";
+            })
+            .catch(err => {
+                document.getElementById("loginStatus").innerText = err.message;
+            });
+    };
+
+    // =====================================================
+    // 🚪 LOGOUT
+    // =====================================================
+    window.logout = function() {
+        signOut(auth);
+    };
+
+    // =====================================================
+    // 👀 AUTH STATE LISTENER
+    // =====================================================
+    onAuthStateChanged(auth, (user) => {
+        if (user) {
+            document.getElementById("loginPage").style.display = "none";
+            document.getElementById("dashboardPage").style.display = "block";
+            startRealtimeListener();
+        } else {
+            document.getElementById("loginPage").style.display = "block";
+            document.getElementById("dashboardPage").style.display = "none";
+        }
+    });
+
+    // =====================================================
+    // 📡 REALTIME DATABASE LISTENER
+    // =====================================================
+    function startRealtimeListener() {
+        const rootRef = ref(db, "smart_home");
+
+        onValue(rootRef, snap => {
+            const data = snap.val();
+            if (!data) return;
+
+            document.getElementById("ldrVal").innerText = data.ldr;
+            document.getElementById("pirVal").innerText = data.pir;
+            document.getElementById("lampStateVal").innerText = data.lamp_state;
+            document.getElementById("brightnessVal").innerText = data.brightness;
+            document.getElementById("modeVal").innerText = data.mode;
+
+            // Sync control UI
+            document.getElementById("brightnessSlider").value = data.brightness;
+            document.getElementById("modeSelect").value = data.mode;
+        });
+    }
+
+    // =====================================================
+    // 🛠 CONTROL FUNCTIONS
+    // =====================================================
+    window.updateMode = function() {
+        update(ref(db, "smart_home"), {
+            mode: document.getElementById("modeSelect").value
+        });
+    };
+
+    window.toggleLamp = function() {
+        let current = document.getElementById("lampStateVal").innerText;
+        let newState = current === "ON" ? "OFF" : "ON";
+
+        update(ref(db, "smart_home"), {
+            lamp_state: newState
+        });
+    };
+
+    window.updateBrightness = function() {
+        update(ref(db, "smart_home"), {
+            brightness: Number(document.getElementById("brightnessSlider").value)
+        });
+    };
+
+</script>
+
+</body>
+</html>
